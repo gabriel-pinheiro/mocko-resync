@@ -1,13 +1,20 @@
-import { Execution, FailureExecution, SuccessExecution } from "./execution";
-import { AsyncInterrupt } from "./interrupt";
+import { Execution } from "./execution";
+import { AsyncInterrupt, ReexecuteInterrupt } from "./interrupt";
+import { ExecutionState } from "./state";
 
-export type SyncFunction = (...params: any)=> any;
+const debug = require('debug')('mocko:resync');
 
 let queue: Execution<any>[] = [];
 
 export function wait<T>(provider: () => Promise<T>): T {
     if(queue.length) {
-        return queue.shift().run();
+        try {
+            return queue.shift().run();
+        } catch(e) {
+            if(!(e instanceof ReexecuteInterrupt)) {
+                throw e;
+            }
+        }
     }
 
     throw new AsyncInterrupt<T>(provider());
@@ -27,12 +34,15 @@ export function except(e: any): void {
     }
 }
 
-export function resync<F extends SyncFunction>(fn: F):
+export function resync<F extends (...params: any)=> any>(fn: F, { limit = 100 } = {}):
         (...params: Parameters<F>) => Promise<ReturnType<F>> {
 
-    async function runEvaluation(fnQueue: any[], ...params: Parameters<F>): Promise<ReturnType<F>> {
+    async function runEvaluation(state: ExecutionState,
+            ...params: Parameters<F>): Promise<ReturnType<F>> {
+
         try {
-            queue = [...fnQueue];
+            queue = [...state.queue];
+            debug(`starting execution with ${queue.length} results: ` + queue.map(v => v.toString()).join(', '));
             const value = fn(...params as any);
             if(queue.length) {
                 throw new Error('Resync evaluation differed between runs, make sure impure functions are called inside state()');
@@ -43,12 +53,10 @@ export function resync<F extends SyncFunction>(fn: F):
                 throw e;
             }
 
-            await e.promise
-                .then(v => fnQueue.push(new SuccessExecution(v)))
-                .catch(e => fnQueue.push(new FailureExecution(e)));
-            return await runEvaluation(fnQueue, ...params as any);
+            await state.updateQueue(e.promise, limit);
+            return await runEvaluation(state, ...params as any);
         }
     }
 
-    return async (...params) => await runEvaluation([], ...params);
+    return async (...params) => await runEvaluation(new ExecutionState(), ...params);
 }

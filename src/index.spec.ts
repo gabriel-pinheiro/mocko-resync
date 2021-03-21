@@ -88,6 +88,27 @@ describe('state', () => {
             }
         })();
     });
+
+    it('should support being nested', async () => {
+        const noop = () => {};
+
+        const val = await resync(() => {
+            affect(noop);
+            affect(noop);
+            const one = state(() => 1);
+            const two = state(() => 2);
+            const four = state(() => {
+                affect(noop);
+                return state(() => 4);
+            });
+            const eight = state(() => state(() => state(() => 8)));
+            const sixteen = 16;
+
+            return one + two + four + eight + sixteen;
+        })();
+
+        expect(val).toEqual(31);
+    });
 });
 
 describe('except', () => {
