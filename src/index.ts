@@ -37,13 +37,13 @@ export function except(e: any): void {
 export function resync<F extends (...params: any)=> any>(fn: F, { limit = 100 } = {}):
         (...params: Parameters<F>) => Promise<ReturnType<F>> {
 
-    async function runEvaluation(state: ExecutionState,
-            ...params: Parameters<F>): Promise<ReturnType<F>> {
+    const runEvaluation = async (state: ExecutionState,
+            ...params: Parameters<F>): Promise<ReturnType<F>> => {
 
         try {
             queue = [...state.queue];
             debug(`starting execution with ${queue.length} results: ` + queue.map(v => v.toString()).join(', '));
-            const value = fn(...params as any);
+	    const value = fn.apply(this, params);
             if(queue.length) {
                 throw new Error('Resync evaluation differed between runs, make sure impure functions are called inside state()');
             }
@@ -56,7 +56,7 @@ export function resync<F extends (...params: any)=> any>(fn: F, { limit = 100 } 
             await state.updateQueue(e.promise, limit);
             return await runEvaluation(state, ...params as any);
         }
-    }
+    };
 
     return async (...params) => await runEvaluation(new ExecutionState(), ...params);
 }

@@ -25,6 +25,15 @@ describe('wait', () => {
             }
         })();
     });
+
+    it('should not lose context', async () => {
+        expect.assertions(1);
+        await resync(function() {
+            this.foo = 'bar';
+            wait(() => sleepValue(10));
+            expect(this.foo).toEqual('bar');
+        }).call({});
+    });
 });
 
 describe('resync', () => {
@@ -41,6 +50,13 @@ describe('resync', () => {
         await resync(() => {
             return wait(() => sleepError(10, new Error('error')));
         })().catch(e => expect(e).toBeInstanceOf(Error));
+    });
+
+    it('should pass context', async () => {
+        expect.assertions(1);
+        await resync(function() {
+            expect(this.foo).toEqual('bar');
+        }).call({foo: 'bar'});
     });
 
     it('should run in parallel', async () => {
